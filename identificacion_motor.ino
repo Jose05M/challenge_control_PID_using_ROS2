@@ -1,4 +1,5 @@
 // Include Libraries to be used
+//Con este codigo permitio aplicarle un step al motor con el motivo de poder obtener su comportamiento y posteriormente identificar el sistema
 #include <micro_ros_arduino.h>    //micro-ros-arduino library
 #include <rcl/rcl.h>              //Core ROS 2 Client Library (RCL) for node management.
 #include <rcl/error_handling.h>   //Error handling utilities for Micro-ROS.
