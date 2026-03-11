@@ -287,9 +287,9 @@ Las respuestas se pueden observar en tiempo real mediante `rqt_plot` o mediante 
 
 # Autores 
 
-José Eduardo Sánchez Martínez                   IRS | A01738476
-Josue Ureña Valencia				IRS | A01738940
-César Arellano Arellano				IRS | A00839373
-Rafael André Gamiz Salazar			IRS | A00838280
+- José Eduardo Sánchez Martínez                   IRS | A01738476
+- Josue Ureña Valencia				IRS | A01738940
+- César Arellano Arellano				IRS | A00839373
+- Rafael André Gamiz Salazar			IRS | A00838280
 
 Proyecto desarrollado como parte de un reto de control utilizando **ROS2 y micro-ROS** para el socioformador ManchesterRobotics.
