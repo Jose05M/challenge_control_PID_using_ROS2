@@ -7,11 +7,13 @@ Este proyecto implementa un sistema de **control de velocidad para un motor DC c
 El sistema permite:
 
 - Recibir una referencia de velocidad desde ROS2
-- Ejecutar un **controlador PID incremental en el microcontrolador**
-- Medir la velocidad del motor mediante un **encoder incremental**
+- Ejecutar un controlador PID incremental en el microcontrolador
+- Medir la velocidad del motor mediante un encoder incremental
 - Publicar la velocidad medida nuevamente a ROS2
+- Publicar el tiempo, setpoint, señal de contro y velocidad medida a un nodo de ROS2
 - Generar señales de prueba (senoidal, cuadrada, triangular y step)
 - Visualizar y analizar la respuesta del sistema en tiempo real
+- Guardar datos para su posterior analisis
 
 El objetivo es evaluar el desempeño del controlador ante diferentes señales de referencia.
 
@@ -25,14 +27,16 @@ El sistema se divide en dos partes principales.
 
 - Generación de señales de referencia
 - Visualización de señales
-- Registro de datos para análisis
+- Registro de datos para su posterior análisis
 
 ### ESP32 (micro-ROS)
 
+- Lectura del setpoint
 - Lectura del encoder
 - Cálculo de velocidad
 - Ejecución del controlador PID
 - Generación de PWM para el motor
+- Publicación de datos necesarios
 
 ---
 
@@ -53,13 +57,13 @@ Motor DC + Encoder
         │
         ▼
 ESP32
-        │
+        │  /motor_velocity
         │  /motor_output
         ▼
 ROS2 PC
         │
         ▼
-rqt_plot / Data Logging
+rqt_plot / save_data
 ```
 
 ---
@@ -69,7 +73,8 @@ rqt_plot / Data Logging
 | Tópico | Tipo | Descripción |
 |------|------|------|
 | `/set_point` | `std_msgs/Float32` | Referencia de velocidad normalizada |
-| `/motor_output` | `std_msgs/Float32` | Velocidad medida normalizada |
+| `/motor_velocity` | `std_msgs/Float32` | Velocidad medida normalizada |
+| `/motor_output` | `std_msgs/Float32MultiArray` |tiempo, setpoint, señal de control, velocidad normalizada |
 
 Las señales están normalizadas en el rango:
 
@@ -117,7 +122,7 @@ donde:
 
 ```
 PULSES_PER_REV = 495
-Ts = 0.1 s
+Ts = 0.05 s
 ```
 
 Posteriormente se aplica un filtro exponencial:
@@ -142,15 +147,15 @@ u(k) = u(k-1)
 donde:
 
 ```
-e(k) = referencia - velocidad
+e(k) = referencia - velocidad medida
 ```
 
 Ganancias utilizadas:
 
 ```
-Kp = 1.2
+Kp = 1.6
 Ki = 0.6
-Kd = 0
+Kd = 0.02
 ```
 
 La señal de control se satura entre:
@@ -190,7 +195,13 @@ ros2 param set /set_point_node signal_type sine
 
 # Ejecución del Sistema
 
-## 1. Ejecutar el micro-ROS agent
+## 1. Cargar codigo al ESP32
+
+Se debe cargar el codigo en el microcontrolador
+
+---
+
+## 2. Ejecutar el micro-ROS agent
 
 ```
 ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/ttyUSB0
@@ -198,25 +209,30 @@ ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/ttyUSB0
 
 ---
 
-## 2. Ejecutar el nodo generador de señales
+## 3. Ejecutar el nodo generador de señales
 
 ```
-ros2 run motor_control set_point_node
+ros2 run control_motor_challenge set_point
+```
+## 3. Ejecutar el nodo que guarda datos recibidos del ESP32
+
+```
+ros2 run control_motor_challenge save_data
 ```
 
 ---
 
-## 3. Visualizar señales
+## 4. Visualizar señales
 
 ```
-rqt_plot
+ros2 run rqt_plot rqt_plot
 ```
 
 Graficar los tópicos:
 
 ```
 /set_point/data
-/motor_output/data
+/motor_velocty/data
 ```
 
 ---
@@ -226,7 +242,7 @@ Graficar los tópicos:
 Durante las pruebas se almacenan los datos en un archivo CSV con el formato:
 
 ```
-time, setpoint, motor_output
+time, setpoint, control, velocity
 ```
 
 Esto permite analizar posteriormente el desempeño del controlador.
@@ -264,24 +280,16 @@ El sistema permite analizar:
 - Respuesta a señales sinusoidales
 - Respuesta a cambios bruscos (step y square)
 
-Las respuestas se pueden observar en tiempo real mediante `rqt_plot` o mediante análisis posterior en Python/MATLAB.
+Las respuestas se pueden observar en tiempo real mediante `rqt_plot` o mediante análisis posterior en Python ejecutando el archivo `plot_csv.py`.
 
 ---
 
-# Trabajo Futuro
 
-Posibles mejoras del sistema:
+# Autores 
 
-- Incrementar la frecuencia de control
-- Implementar control con **feedforward**
-- Implementar **anti-windup** en el PID
-- Utilizar cuadratura completa del encoder (4x)
-- Registrar datos con `rosbag2`
+José Eduardo Sánchez Martínez                   IRS | A01738476
+Josue Ureña Valencia				IRS | A01738940
+César Arellano Arellano				IRS | A00839373
+Rafael André Gamiz Salazar			IRS | A00838280
 
----
-
-# Autor
-
-José Eduardo Sánchez Martínez
-
-Proyecto desarrollado como parte de un reto de control utilizando **ROS2 y micro-ROS**.
+Proyecto desarrollado como parte de un reto de control utilizando **ROS2 y micro-ROS** para el socioformador ManchesterRobotics.
