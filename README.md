@@ -1,88 +1,98 @@
-# Control de Velocidad de Motor DC con micro-ROS y ROS2
+# DC Motor Speed Control with micro-ROS and ROS 2
 
-## Descripción
+## Description
 
-Este proyecto implementa un sistema de **control de velocidad para un motor DC con encoder** utilizando **micro-ROS en un ESP32** y **ROS2 en una computadora**.
+This project implements a **closed-loop speed control system for a DC motor with an encoder**, using **micro-ROS on an ESP32** and **ROS 2 on a computer**.
 
-El sistema permite:
+The system is able to:
 
-- Recibir una referencia de velocidad desde ROS2
-- Ejecutar un controlador PID incremental en el microcontrolador
-- Medir la velocidad del motor mediante un encoder incremental
-- Publicar la velocidad medida nuevamente a ROS2
-- Publicar el tiempo, setpoint, señal de contro y velocidad medida a un nodo de ROS2
-- Generar señales de prueba (senoidal, cuadrada, triangular y step)
-- Visualizar y analizar la respuesta del sistema en tiempo real
-- Guardar datos para su posterior analisis
+- Receive a speed reference from ROS 2
+- Run an incremental PID controller on the microcontroller itself
+- Measure the motor's speed through an incremental encoder
+- Publish the measured speed back to ROS 2
+- Publish time, setpoint, control signal, and measured speed to a ROS 2 node
+- Generate test signals (sine, square, triangle, and step)
+- Visualize and analyze the system's response in real time
+- Log data for later analysis
 
-El objetivo es evaluar el desempeño del controlador ante diferentes señales de referencia.
-
----
-
-# Arquitectura del Sistema
-
-El sistema se divide en dos partes principales.
-
-### Computadora (ROS2)
-
-- Generación de señales de referencia
-- Visualización de señales
-- Registro de datos para su posterior análisis
-
-### ESP32 (micro-ROS)
-
-- Lectura del setpoint
-- Lectura del encoder
-- Cálculo de velocidad
-- Ejecución del controlador PID
-- Generación de PWM para el motor
-- Publicación de datos necesarios
+The project was built in two stages: first, the real motor's dynamics were identified in open loop; then, that model guided the design of the PID controller that runs in closed loop on the ESP32. The end goal is to evaluate that controller's performance against different reference signals.
 
 ---
 
-# Diagrama del Sistema
+# System Architecture
+
+The system is split into two main parts.
+
+### Computer (ROS 2)
+
+- Reference signal generation (`set_point_node`)
+- Data logging for later analysis (`save_data`)
+- Real-time visualization (`rqt_plot`)
+
+### ESP32 (micro-ROS, node `motor_control`)
+
+- Reading the setpoint
+- Reading the encoder
+- Computing velocity
+- Running the PID controller
+- Generating PWM for the motor
+- Publishing the required data
+
+---
+
+# System Diagram
 
 ```
-SetPoint Node (ROS2)
-        │
-        │  /set_point
-        ▼
-ESP32 (micro-ROS)
-        │
-        │  Control PID
-        │
-        ▼
-Motor DC + Encoder
-        │
-        │
-        ▼
-ESP32
-        │  /motor_velocity
-        │  /motor_output
-        ▼
-ROS2 PC
-        │
-        ▼
-rqt_plot / save_data
+   PC (ROS 2)                                ESP32 (micro-ROS, node "motor_control")
+ ┌─────────────────┐    /set_point         ┌────────────────────────────┐
+ │  set_point_node  │ ─────────────────────►│   Incremental PID           │  PWM + Dir   ┌───────┐   ┌───────────┐
+ │                  │                       │   (Kp=1.6, Ki=0.6, Kd=0.02) │─────────────►│ L298N │──►│ DC Motor  │
+ └─────────────────┘                       │                             │              └───────┘   │ + Encoder │
+ ┌─────────────────┐    /motor_output      │                             │◄──── pulses ──────────────┘└───────────┘
+ │   save_data      │◄──────────────────────│                             │
+ └─────────────────┘                       └──────────────┬──────────────┘
+ ┌─────────────────┐    /motor_velocity                    │
+ │   rqt_plot       │◄──────────────────────────────────────┘
+ └─────────────────┘
 ```
 
 ---
 
-# Tópicos ROS2
+# System Identification
 
-| Tópico | Tipo | Descripción |
+Before designing the controller, the real motor's dynamics were identified in **open loop**, using the [`firmware/identificacion_motor.ino`](firmware/identificacion_motor.ino) firmware: it applies the `/set_point` value directly as a PWM magnitude (no controller at all) and publishes `/motor_output` as just `[time, setpoint, velocity]` — just enough to log the motor's step response.
+
+From that logged response (`motor_data.csv`), [`csv_data/scripts/sistem_identification.py`](csv_data/scripts/sistem_identification.py) fits an ARX(1,1) model via least squares and converts it into a continuous first-order transfer function:
+
+```
+G(s) = K / (τs + 1)
+```
+
+Result obtained:
+
+```
+G(s) = 1.005 / (1.105s + 1)
+```
+
+(see [`csv_data/plots/system_identification.png`](csv_data/plots/system_identification.png)). This model's step response was the starting point for proposing the PID gains, which were later fine-tuned manually to `Kp=1.6, Ki=0.6, Kd=0.02`.
+
+---
+
+# ROS 2 Topics
+
+| Topic | Type | Description |
 |------|------|------|
-| `/set_point` | `std_msgs/Float32` | Referencia de velocidad normalizada |
-| `/motor_velocity` | `std_msgs/Float32` | Velocidad medida normalizada |
-| `/motor_output` | `std_msgs/Float32MultiArray` |tiempo, setpoint, señal de control, velocidad normalizada |
+| `/set_point` | `std_msgs/Float32` | Normalized speed reference |
+| `/motor_velocity` | `std_msgs/Float32` | Normalized measured speed |
+| `/motor_output` | `std_msgs/Float32MultiArray` | `[time, setpoint, control_signal, normalized velocity]` |
 
-Las señales están normalizadas en el rango:
+All signals are normalized to the range:
 
 ```
--1 ≤ señal ≤ 1
+-1 ≤ signal ≤ 1
 ```
 
-donde:
+where:
 
 ```
 motor_output = rpm / RPM_MAX
@@ -90,52 +100,70 @@ motor_output = rpm / RPM_MAX
 
 ---
 
-# Hardware Utilizado
+# Hardware Used
 
-- ESP32
-- Motor DC con caja reductora
-- Encoder incremental
-- Driver de motor (puente H)
-- Fuente de alimentación externa
+| Component | Model / Type | Relevant specs |
+|---|---|---|
+| Microcontroller | ESP32 Development Board | 240 MHz CPU, WiFi/Bluetooth, PWM, serial comms |
+| DC motor with encoder | JGA25-370 | Integrated quadrature encoder, 140 RPM - 12V |
+| Motor driver | L298N (dual H-bridge) | PWM control, up to 2A per channel |
+| Power supply | External DC supply | Powers the motor at 12V |
+| Computer | Laptop (Ubuntu) | Runs ROS 2 and supervises the system |
 
-### Conexión de Pines
+### Pin Connections
 
-| Señal | Pin ESP32 |
+| Signal | ESP32 Pin |
 |------|------|
 | Encoder A | GPIO 14 |
 | Encoder B | GPIO 13 |
-| PWM Motor | GPIO 27 |
-| Dirección IN1 | GPIO 25 |
-| Dirección IN2 | GPIO 26 |
+| Motor PWM | GPIO 27 |
+| Direction IN1 | GPIO 25 |
+| Direction IN2 | GPIO 26 |
 
 ---
 
-# Medición de Velocidad
+# Speed Measurement
 
-La velocidad del motor se calcula a partir del conteo de pulsos del encoder:
+Motor speed is computed from the encoder pulse count, accumulated every sampling period `Ts` and read through an interrupt:
 
 ```
-rpm = (pulseCount * 60) / (PULSES_PER_REV * Ts)
+rpm_raw = (pulseCount * 60) / (PULSES_PER_REV * Ts)
 ```
 
-donde:
+where:
 
 ```
 PULSES_PER_REV = 495
-Ts = 0.05 s
+Ts = 0.05 s   (0.1 s during open-loop identification)
 ```
 
-Posteriormente se aplica un filtro exponencial:
+An exponential filter is then applied to smooth the signal:
 
 ```
-rpm_filt = α * rpm_raw + (1 - α) * rpm_prev
+rpm_filt = α * rpm_raw + (1 - α) * rpm_prev     # α = 0.20
+velocity = rpm_filt / RPM_MAX                    # normalized to [-1, 1]
 ```
 
 ---
 
-# Controlador Implementado
+# micro-ROS Connection State Machine
 
-Se implementó un **PID incremental discreto**.
+Both ESP32 firmware variants (identification and final control) implement the same 4-state machine so the board survives the micro-ROS agent appearing, disappearing, and reappearing — without ever needing a manual reset:
+
+| State | Meaning |
+|---|---|
+| `WAITING_AGENT` | No agent yet; pings every 500 ms |
+| `AGENT_AVAILABLE` | Agent found; creates the node and its entities (`create_entities()`) |
+| `AGENT_CONNECTED` | Entities live; pings every 200 ms and spins the executor |
+| `AGENT_DISCONNECTED` | Ping failed; destroys entities and falls back to `WAITING_AGENT` |
+
+Communication with the agent is over **Serial** (`set_microros_transports()`).
+
+---
+
+# Controller Implementation
+
+An **incremental discrete PID** was implemented, running directly on the ESP32 ([`firmware/mcr2_challenge_final.ino`](firmware/mcr2_challenge_final.ino)):
 
 ```
 u(k) = u(k-1)
@@ -144,13 +172,13 @@ u(k) = u(k-1)
        + Kd/Ts (e(k) - 2e(k-1) + e(k-2))
 ```
 
-donde:
+where:
 
 ```
-e(k) = referencia - velocidad medida
+e(k) = reference - measured velocity
 ```
 
-Ganancias utilizadas:
+Gains used:
 
 ```
 Kp = 1.6
@@ -158,13 +186,13 @@ Ki = 0.6
 Kd = 0.02
 ```
 
-La señal de control se satura entre:
+The control signal is saturated to:
 
 ```
 0 ≤ u ≤ 1
 ```
 
-y posteriormente se convierte a PWM:
+and then converted to PWM:
 
 ```
 PWM = u * 255
@@ -172,20 +200,18 @@ PWM = u * 255
 
 ---
 
-# Generación de Señales de Prueba
+# Test Signal Generation
 
-Se implementó un nodo ROS2 en Python que genera distintas señales de referencia.
+A ROS 2 Python node (`set_point`) generates different reference signals.
 
-Tipos de señal disponibles:
+Available signal types:
 
 - `sine`
 - `square`
 - `triangle`
 - `step`
 
-El tipo de señal puede cambiarse dinámicamente mediante parámetros.
-
-Ejemplo:
+The signal type can be changed dynamically via a parameter, without restarting the node:
 
 ```
 ros2 param set /set_point_node signal_type sine
@@ -193,103 +219,172 @@ ros2 param set /set_point_node signal_type sine
 
 ---
 
-# Ejecución del Sistema
+# Data Logging
 
-## 1. Cargar codigo al ESP32
-
-Se debe cargar el codigo en el microcontrolador
-
----
-
-## 2. Ejecutar el micro-ROS agent
-
-```
-ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/ttyUSB0
-```
-
----
-
-## 3. Ejecutar el nodo generador de señales
-
-```
-ros2 run control_motor_challenge set_point
-```
-## 3. Ejecutar el nodo que guarda datos recibidos del ESP32
-
-```
-ros2 run control_motor_challenge save_data
-```
-
----
-
-## 4. Visualizar señales
-
-```
-ros2 run rqt_plot rqt_plot
-```
-
-Graficar los tópicos:
-
-```
-/set_point/data
-/motor_velocty/data
-```
-
----
-
-# Registro de Datos
-
-Durante las pruebas se almacenan los datos en un archivo CSV con el formato:
+During testing, `save_data` subscribes to `/motor_output` and appends every sample to a CSV file with the format:
 
 ```
 time, setpoint, control, velocity
 ```
 
-Esto permite analizar posteriormente el desempeño del controlador.
+This allows the controller's performance to be analyzed later with the scripts in [`csv_data/scripts/`](csv_data/scripts/).
 
 ---
 
-# Consideraciones de Control
+# Control Considerations
 
-El sistema utiliza una frecuencia de control de:
+The system runs its control loop at:
 
 ```
-10 Hz
+10-20 Hz   (Ts = 0.1 s during identification, Ts = 0.05 s during final control)
 ```
 
-La dinámica del motor se encuentra aproximadamente entre:
+The motor's dynamics fall roughly between:
 
 ```
 2 – 5 Hz
 ```
 
-por lo que se cumple la regla práctica:
+so the rule of thumb is satisfied:
 
 ```
-f_control ≥ 10 × f_dinamica
+f_control ≥ 10 × f_dynamics
 ```
 
 ---
 
-# Resultados Esperados
+# Repository Structure
 
-El sistema permite analizar:
+```
+challenge_control_PID_using_ROS2/
+├── control_motor_challenge/         # ROS 2 package (ament_python)
+│   └── control_motor_challenge/
+│       ├── set_point.py             # reference signal generator node
+│       └── save_data.py             # /motor_output → motor_data.csv logger
+├── firmware/
+│   ├── identificacion_motor.ino     # Stage 1: open-loop, for system identification
+│   └── mcr2_challenge_final.ino     # Stage 2: closed-loop incremental PID (final)
+├── csv_data/
+│   ├── scripts/
+│   │   ├── sistem_identification.py # ARX(1,1) identification (reads motor_data.csv)
+│   │   ├── plot_csv.py              # plot setpoint/velocity/control + tracking error
+│   │   └── control_analisis.py      # step-response metrics (rise/settling time, overshoot, RMSE...)
+│   ├── data/                        # archived logged test runs
+│   │   ├── sine.csv
+│   │   ├── square.csv
+│   │   ├── step.csv
+│   │   └── step_perturbations.csv
+│   └── plots/                       # exported plots referenced in the report
+│       ├── system_identification.png
+│       ├── sine.png / sine_error.png
+│       ├── square.png / square_error.png
+│       ├── step.png / step_error.png
+│       ├── step_perturbations.png / step_perturbations_error.png
+│       └── control_analysis.png / control_analysis_error.png
+├── report/
+│   ├── reporte_final.pdf            # submitted final report
+│   └── presentacion_final.pdf       # submitted final presentation
+└── README.md
+```
 
-- Seguimiento de referencia
-- Error estacionario
-- Respuesta a señales sinusoidales
-- Respuesta a cambios bruscos (step y square)
-
-Las respuestas se pueden observar en tiempo real mediante `rqt_plot` o mediante análisis posterior en Python ejecutando el archivo `plot_csv.py`.
+&ensp;&ensp;`csv_data/scripts/plot_csv.py` and `control_analisis.py` take an optional
+CSV filename argument (default `square.csv` / `step.csv`), resolved against
+`csv_data/data/` when the given name isn't found relative to the current directory —
+e.g. `python3 plot_csv.py step_perturbations.csv`. `sistem_identification.py` instead
+defaults to `motor_data.csv` in the current directory, since that file is produced
+live by `save_data` right after an identification run, not archived in `data/`.
 
 ---
 
+# Running the System
 
-# Autores 
+## Stage 1 — Identify the real motor
 
-- José Eduardo Sánchez Martínez                   IRS | A01738476
-- Josue Ureña Valencia				IRS | A01738940
-- César Arellano Arellano				IRS | A00839373
-- Rafael André Gamiz Salazar			IRS | A00838280
+> **Note:** `motor_data.csv` from the original identification run was not saved to
+> this repository — only its resulting plot
+> ([`csv_data/plots/system_identification.png`](csv_data/plots/system_identification.png))
+> and the fitted model (`G(s) = 1.005 / (1.105s + 1)`) were kept. Running steps 1-3
+> below regenerates a fresh `motor_data.csv` that step 4 can then fit.
 
-Proyecto desarrollado como parte de un reto de control utilizando **ROS2 y micro-ROS** para el socioformador ManchesterRobotics.
+1. Flash [`firmware/identificacion_motor.ino`](firmware/identificacion_motor.ino) to the ESP32.
+2. Start the micro-ROS agent:
+    ```
+    ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/ttyUSB0
+    ```
+3. Generate a step reference and log the response:
+    ```
+    ros2 run control_motor_challenge set_point --ros-args -p signal_type:=step
+    ros2 run control_motor_challenge save_data
+    ```
+4. Fit the model from the logged data:
+    ```
+    cd csv_data/scripts
+    python3 sistem_identification.py ../../motor_data.csv   # or wherever it was written
+    ```
+
+## Stage 2 — Run the final closed-loop controller
+
+1. Flash [`firmware/mcr2_challenge_final.ino`](firmware/mcr2_challenge_final.ino) to the ESP32.
+2. Start the micro-ROS agent:
+    ```
+    ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/ttyUSB0
+    ```
+3. Generate the reference signal and log the data:
+    ```
+    ros2 run control_motor_challenge set_point
+    ros2 run control_motor_challenge save_data
+    ```
+4. Visualize live:
+    ```
+    ros2 run rqt_plot rqt_plot
+    ```
+    Plot the topics:
+    ```
+    /set_point/data
+    /motor_velocity/data
+    ```
+5. Switch the reference signal on the fly:
+    ```
+    ros2 param set /set_point_node signal_type square
+    ros2 param set /set_point_node signal_type step
+    ```
+6. Analyze a logged run:
+    ```
+    cd csv_data/scripts
+    python3 plot_csv.py square.csv          # setpoint / velocity / control + tracking error
+    python3 control_analisis.py step.csv    # rise time, overshoot, settling time, RMSE...
+    ```
+
+---
+
+# Results
+
+Four experiments were run with the final closed-loop controller (plots in [`csv_data/plots/`](csv_data/plots/)):
+
+| Signal | Observation |
+|---|---|
+| Sine | Tracks the reference closely, error stays within ±0.2; a brief spike near t=25s at a direction change |
+| Square | The most demanding case — error reaches ±2.0 only during the ±1↔-1 transitions, then returns to ~0 quickly |
+| Step | Fast, accurate response, going from -1.0 to +1.0 within a few seconds |
+| Step with perturbations | Manual resistance applied to the shaft (t=5-20s) causes oscillation, but the controller recovers the setpoint |
+
+**Conclusions from the report:** the system is stable in every tested scenario. The identified improvements are specific and actionable: adding **anti-windup** to the integral term (not implemented — it can cause overshoot after prolonged saturation), and using a time-between-pulses measurement method to improve velocity resolution at low RPM.
+
+---
+
+# Report and Video
+
+**📄 Final report** — [report/reporte_final.pdf](report/reporte_final.pdf)
+**📊 Final presentation** — [report/presentacion_final.pdf](report/presentacion_final.pdf)
+**🎥 Demo video** — [youtu.be/kC0vWSkkP8s](https://youtu.be/kC0vWSkkP8s)
+
+---
+
+# Authors
+
+- José Eduardo Sánchez Martínez     IRS | A01738476
+- Josue Ureña Valencia              IRS | A01738940
+- César Arellano Arellano           IRS | A00839373
+- Rafael André Gamiz Salazar        IRS | A00838280
+
+Project developed as part of a control challenge using **ROS 2 and micro-ROS** for the industry partner ManchesterRobotics.

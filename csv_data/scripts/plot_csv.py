@@ -1,11 +1,18 @@
+import sys
+from pathlib import Path
 import pandas as pd
 import matplotlib.pyplot as plt
 
 # =========================
 # Cargar datos
 # =========================
+# Usage: python3 plot_csv.py [filename.csv]   (default: square.csv, looked up in ../data/)
 
-data = pd.read_csv("square.csv")
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+csv_name = sys.argv[1] if len(sys.argv) > 1 else "square.csv"
+csv_path = Path(csv_name) if Path(csv_name).exists() else DATA_DIR / csv_name
+
+data = pd.read_csv(csv_path)
 
 t = data["time"].values
 sp = data["setpoint"].values

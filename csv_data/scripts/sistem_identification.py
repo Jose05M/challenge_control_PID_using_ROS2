@@ -1,3 +1,5 @@
+import sys
+from pathlib import Path
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -6,8 +8,12 @@ from numpy.linalg import lstsq
 # =========================
 # cargar datos
 # =========================
+# Usage: python3 sistem_identification.py [path/to/motor_data.csv]
+# motor_data.csv is produced live by `save_data` right after an open-loop
+# identification run — it is not one of the archived CSVs in ../data/.
 
-data = pd.read_csv("motor_data.csv")
+csv_path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("motor_data.csv")
+data = pd.read_csv(csv_path)
 
 t = data["time"].values
 u = data["setpoint"].values

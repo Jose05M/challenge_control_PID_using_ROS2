@@ -1,3 +1,5 @@
+import sys
+from pathlib import Path
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -5,8 +7,13 @@ import matplotlib.pyplot as plt
 # =========================
 # Cargar datos
 # =========================
+# Usage: python3 control_analisis.py [filename.csv]   (default: step.csv, looked up in ../data/)
 
-data = pd.read_csv("step.csv")
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+csv_name = sys.argv[1] if len(sys.argv) > 1 else "step.csv"
+csv_path = Path(csv_name) if Path(csv_name).exists() else DATA_DIR / csv_name
+
+data = pd.read_csv(csv_path)
 
 t = data["time"].values
 sp = data["setpoint"].values
