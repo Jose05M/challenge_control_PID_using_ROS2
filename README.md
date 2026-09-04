@@ -1,5 +1,16 @@
 # DC Motor Speed Control with micro-ROS and ROS 2
 
+<p align="center">
+  <img src="csv_data/plots/sine.png" width="720" alt="Closed-loop sine tracking response">
+</p>
+
+<p align="center">
+  <img alt="ROS 2" src="https://img.shields.io/badge/ROS_2-Humble-22314E?logo=ros&logoColor=white">
+  <img alt="micro-ROS" src="https://img.shields.io/badge/micro--ROS-ESP32-4E8EE9">
+  <img alt="Controller" src="https://img.shields.io/badge/controller-Incremental_PID-orange">
+  <img alt="License" src="https://img.shields.io/badge/license-Apache_2.0-green">
+</p>
+
 ## Description
 
 This project implements a **closed-loop speed control system for a DC motor with an encoder**, using **micro-ROS on an ESP32** and **ROS 2 on a computer**.
@@ -16,6 +27,25 @@ The system is able to:
 - Log data for later analysis
 
 The project was built in two stages: first, the real motor's dynamics were identified in open loop; then, that model guided the design of the PID controller that runs in closed loop on the ESP32. The end goal is to evaluate that controller's performance against different reference signals.
+
+## Table of Contents
+
+- [System Architecture](#system-architecture)
+- [System Diagram](#system-diagram)
+- [System Identification](#system-identification)
+- [ROS 2 Topics](#ros-2-topics)
+- [Hardware Used](#hardware-used)
+- [Speed Measurement](#speed-measurement)
+- [micro-ROS Connection State Machine](#micro-ros-connection-state-machine)
+- [Controller Implementation](#controller-implementation)
+- [Test Signal Generation](#test-signal-generation)
+- [Data Logging](#data-logging)
+- [Control Considerations](#control-considerations)
+- [Repository Structure](#repository-structure)
+- [Running the System](#running-the-system)
+- [Results](#results)
+- [Report and Video](#report-and-video)
+- [Authors](#authors)
 
 ---
 
@@ -74,7 +104,12 @@ Result obtained:
 G(s) = 1.005 / (1.105s + 1)
 ```
 
-(see [`csv_data/plots/system_identification.png`](csv_data/plots/system_identification.png)). This model's step response was the starting point for proposing the PID gains, which were later fine-tuned manually to `Kp=1.6, Ki=0.6, Kd=0.02`.
+<p align="center">
+  <img src="csv_data/plots/system_identification.png" width="700" alt="Open-loop step response vs. fitted first-order model">
+</p>
+<p align="center"><em>Open-loop step response of the real motor (blue) vs. the fitted first-order model (red).</em></p>
+
+This model's step response was the starting point for proposing the PID gains, which were later fine-tuned manually to `Kp=1.6, Ki=0.6, Kd=0.02`.
 
 ---
 
@@ -359,14 +394,47 @@ live by `save_data` right after an identification run, not archived in `data/`.
 
 # Results
 
-Four experiments were run with the final closed-loop controller (plots in [`csv_data/plots/`](csv_data/plots/)):
+Four experiments were run with the final closed-loop controller. Each plot shows the setpoint, the measured velocity, and the control signal; the corresponding `*_error.png` in [`csv_data/plots/`](csv_data/plots/) shows the tracking error over the same run.
 
-| Signal | Observation |
-|---|---|
-| Sine | Tracks the reference closely, error stays within ±0.2; a brief spike near t=25s at a direction change |
-| Square | The most demanding case — error reaches ±2.0 only during the ±1↔-1 transitions, then returns to ~0 quickly |
-| Step | Fast, accurate response, going from -1.0 to +1.0 within a few seconds |
-| Step with perturbations | Manual resistance applied to the shaft (t=5-20s) causes oscillation, but the controller recovers the setpoint |
+<table>
+<tr>
+<td width="50%">
+
+<p align="center"><b>Step</b></p>
+<img src="csv_data/plots/step.png" width="100%" alt="Step response">
+<p align="center">Fast, accurate response, going from -1.0 to +1.0 within a few seconds.</p>
+
+</td>
+<td width="50%">
+
+<p align="center"><b>Square</b></p>
+<img src="csv_data/plots/square.png" width="100%" alt="Square wave tracking">
+<p align="center">The most demanding case — error reaches ±2.0 only during the ±1↔-1 transitions, then returns to ~0 quickly.</p>
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+<p align="center"><b>Sine</b></p>
+<img src="csv_data/plots/sine.png" width="100%" alt="Sine wave tracking">
+<p align="center">Tracks the reference closely, error stays within ±0.2; a brief spike near t=25s at a direction change.</p>
+
+</td>
+<td width="50%">
+
+<p align="center"><b>Step with perturbations</b></p>
+<img src="csv_data/plots/step_perturbations.png" width="100%" alt="Step response with manual perturbations">
+<p align="center">Manual resistance applied to the shaft (t=5-20s) causes oscillation, but the controller recovers the setpoint.</p>
+
+</td>
+</tr>
+</table>
+
+<p align="center">
+  <img src="csv_data/plots/control_analysis.png" width="600" alt="Step-response metrics: rise time, overshoot, settling time">
+</p>
+<p align="center"><em>Step-response metrics computed by <a href="csv_data/scripts/control_analisis.py">control_analisis.py</a>: rise time, overshoot, and settling time.</em></p>
 
 **Conclusions from the report:** the system is stable in every tested scenario. The identified improvements are specific and actionable: adding **anti-windup** to the integral term (not implemented — it can cause overshoot after prolonged saturation), and using a time-between-pulses measurement method to improve velocity resolution at low RPM.
 
