@@ -444,7 +444,6 @@ Four experiments were run with the final closed-loop controller. Each plot shows
 
 **📄 Final report** — [report/reporte_final.pdf](report/reporte_final.pdf)
 **📊 Final presentation** — [report/presentacion_final.pdf](report/presentacion_final.pdf)
-**🎥 Demo video** — [youtu.be/kC0vWSkkP8s](https://youtu.be/kC0vWSkkP8s)
 
 ---
 
